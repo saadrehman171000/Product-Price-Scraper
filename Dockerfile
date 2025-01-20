@@ -34,6 +34,13 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Add these lines after Chrome installation
+RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Python dependencies
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
@@ -52,6 +59,9 @@ ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
 # Add these environment variables for CORS
 ENV STREAMLIT_SERVER_ENABLE_CORS=false
 ENV STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false
+
+# Add this environment variable
+ENV PYTHONUNBUFFERED=1
 
 # Run the Streamlit application
 CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.enableCORS=false", "--server.address=0.0.0.0"]

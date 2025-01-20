@@ -13,6 +13,10 @@ from selenium.webdriver.chrome.options import Options
 import zipfile
 import io
 import os
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Function to run the web scraping for exact matches
 def scrape_facebook_marketplace_exact(city, product, min_price, max_price, city_code_fb):
@@ -24,111 +28,128 @@ def scrape_facebook_marketplace_partial(city, product, min_price, max_price, cit
 
 # Main scraping function with an exact match flag
 def scrape_facebook_marketplace(city, product, min_price, max_price, city_code_fb, exact, sleep_time=3):
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Enables headless mode
-    chrome_options.add_argument("--disable-gpu")  # Disable GPU acceleration (optional, good for headless)
-    chrome_options.add_argument("--no-sandbox")  # Recommended for Linux systems
-    chrome_options.add_argument("--disable-dev-shm-usage")  # Avoid issues with /dev/shm on Linux
-    chrome_options.add_argument("--disable-quic")
-
-    browser = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-
-    # Setup URL
-    exact_param = 'true' if exact else 'false'
-    url = f"https://www.facebook.com/marketplace/{city_code_fb}/search?query={product}&minPrice={min_price}&maxPrice={max_price}&daysSinceListed=1&exact={exact_param}"
-    browser.get(url)
-
-    time.sleep(4)
-
-    # Close cookies and pop-ups
     try:
-        close_btn = browser.find_element(By.XPATH, '//div[@aria-label="Decline optional cookies" and @role="button"]')
-        close_btn.click()
-    except:
-        pass
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-quic")
+        # Add these new options
+        chrome_options.add_argument("--disable-software-rasterizer")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--start-maximized")
+        chrome_options.add_argument("--remote-debugging-port=9222")
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
 
-    try:
-        close_btn = browser.find_element(By.XPATH, '//div[@aria-label="Close" and @role="button"]')
-        close_btn.click()
-    except:
-        pass
+        # Update ChromeDriver initialization
+        browser = webdriver.Chrome(options=chrome_options)
 
-    # Scroll down to load more items
-    count = 0
-    last_height = browser.execute_script("return document.body.scrollHeight")
-    while True:
-        browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(sleep_time)
-        new_height = browser.execute_script("return document.body.scrollHeight")
-        if (new_height == last_height) or count == 8:
-            break
-        last_height = new_height
-        count = count + 1
+        # Setup URL
+        exact_param = 'true' if exact else 'false'
+        url = f"https://www.facebook.com/marketplace/{city_code_fb}/search?query={product}&minPrice={min_price}&maxPrice={max_price}&daysSinceListed=1&exact={exact_param}"
+        
+        logger.info(f"Attempting to scrape: {url}")
+        browser.get(url)
+        
+        logger.info("Waiting for page load...")
+        time.sleep(4)
 
-    # Retrieve the HTML
-    html = browser.page_source
-    browser.close()
+        # Close cookies and pop-ups
+        try:
+            close_btn = browser.find_element(By.XPATH, '//div[@aria-label="Decline optional cookies" and @role="button"]')
+            close_btn.click()
+        except:
+            pass
 
-    # Use BeautifulSoup to parse the HTML
-    soup = BeautifulSoup(html, 'html.parser')
-    links = soup.find_all('a')
+        try:
+            close_btn = browser.find_element(By.XPATH, '//div[@aria-label="Close" and @role="button"]')
+            close_btn.click()
+        except:
+            pass
 
-    # Filter links based on search criteria
-    if exact:
-        final_links = []
-        for link in links:
-            if fuzz.partial_ratio(product.lower(), link.text.lower()) >= 70:
-                if fuzz.partial_ratio(city.lower().rstrip(), link.text.lower()) >= 50:
-                    final_links.append(link)
-    else:
-        fuzz_threshold = 50
-        final_links = [
-            link for link in links
-            if fuzz.partial_ratio(product.lower(), link.text.lower()) > fuzz_threshold and city.lower() in link.text.lower()
-        ]
-
-    # Extract product data using enhanced logic
-    extracted_data = []
-    for prod_link in final_links:
-        url = prod_link.get('href')
-        text = '\n'.join(prod_link.stripped_strings)
-        lines = text.split('\n')
-
-        numeric_pattern = re.compile(r'\d[\d, •]*')  # Pattern to find prices
-        price = None
-
-        for line in lines:
-            match = numeric_pattern.search(line)
-            if match:
-                price_str = match.group()
-                price = float(price_str.replace(',', '').replace('•', '').strip())
+        # Scroll down to load more items
+        count = 0
+        last_height = browser.execute_script("return document.body.scrollHeight")
+        while True:
+            browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(sleep_time)
+            new_height = browser.execute_script("return document.body.scrollHeight")
+            if (new_height == last_height) or count == 8:
                 break
+            last_height = new_height
+            count = count + 1
 
-        # Title and location extraction
-        title = ""
-        location = ""
-        for i, line in enumerate(lines):
-            if i == 1:  # Assume the first line is the title
-                title = line.strip()
-            elif "km" in line.lower() or "miles" in line.lower():  # Distance pattern for location
-                location = line.strip()
-            elif len(lines) > 1 and i == len(lines) - 1:  # Fallback for last line as location
-                location = line.strip()
+        # Retrieve the HTML
+        html = browser.page_source
+        browser.close()
 
-        extracted_data.append({
-            'title': title,
-            'price': price,
-            'location': location,
-            'url': url
-        })
+        # Use BeautifulSoup to parse the HTML
+        soup = BeautifulSoup(html, 'html.parser')
+        links = soup.find_all('a')
 
-    base = "https://web.facebook.com/"
-    for items in extracted_data:
-        items['url'] = base + items['url']
+        # Filter links based on search criteria
+        if exact:
+            final_links = []
+            for link in links:
+                if fuzz.partial_ratio(product.lower(), link.text.lower()) >= 70:
+                    if fuzz.partial_ratio(city.lower().rstrip(), link.text.lower()) >= 50:
+                        final_links.append(link)
+        else:
+            fuzz_threshold = 50
+            final_links = [
+                link for link in links
+                if fuzz.partial_ratio(product.lower(), link.text.lower()) > fuzz_threshold and city.lower() in link.text.lower()
+            ]
 
-    # Create a DataFrame
-    items_df = pd.DataFrame(extracted_data)
-    return items_df, len(links)
+        # Extract product data using enhanced logic
+        extracted_data = []
+        for prod_link in final_links:
+            url = prod_link.get('href')
+            text = '\n'.join(prod_link.stripped_strings)
+            lines = text.split('\n')
+
+            numeric_pattern = re.compile(r'\d[\d, •]*')  # Pattern to find prices
+            price = None
+
+            for line in lines:
+                match = numeric_pattern.search(line)
+                if match:
+                    price_str = match.group()
+                    price = float(price_str.replace(',', '').replace('•', '').strip())
+                    break
+
+            # Title and location extraction
+            title = ""
+            location = ""
+            for i, line in enumerate(lines):
+                if i == 1:  # Assume the first line is the title
+                    title = line.strip()
+                elif "km" in line.lower() or "miles" in line.lower():  # Distance pattern for location
+                    location = line.strip()
+                elif len(lines) > 1 and i == len(lines) - 1:  # Fallback for last line as location
+                    location = line.strip()
+
+            extracted_data.append({
+                'title': title,
+                'price': price,
+                'location': location,
+                'url': url
+            })
+
+        base = "https://web.facebook.com/"
+        for items in extracted_data:
+            items['url'] = base + items['url']
+
+        # Create a DataFrame
+        items_df = pd.DataFrame(extracted_data)
+        return items_df, len(links)
+
+    except Exception as e:
+        logger.error(f"Error during scraping: {str(e)}")
+        return pd.DataFrame(), 0
 
 # Streamlit UI
 st.set_page_config(page_title="Facebook Marketplace Scraper", layout="wide")
