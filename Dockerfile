@@ -8,6 +8,9 @@ ENV PYTHONUNBUFFERED 1
 # Set working directory
 WORKDIR /app
 
+# Copy all files to the container
+COPY . .
+
 # Install system dependencies for Selenium and Google Chrome
 RUN apt-get update && apt-get install -y \
     wget \
@@ -33,7 +36,6 @@ RUN apt-get update && apt-get install -y \
 
 # Install Python dependencies
 RUN pip install --upgrade pip
-COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 # Install WebDriver Manager for automatic ChromeDriver installation
@@ -46,6 +48,10 @@ EXPOSE 8501
 ENV PORT=8501
 ENV STREAMLIT_SERVER_PORT=8501
 ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
+
+# Add these environment variables for CORS
+ENV STREAMLIT_SERVER_ENABLE_CORS=false
+ENV STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false
 
 # Run the Streamlit application
 CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.enableCORS=false", "--server.address=0.0.0.0"]
