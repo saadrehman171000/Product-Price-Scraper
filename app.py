@@ -78,6 +78,7 @@ def scrape_facebook_marketplace(city, product, min_price, max_price, city_code_f
         if exact:
             final_links = []
             for link in soup.find_all('a'):
+                st.write(f"Link text: {link.text}")
                 if fuzz.partial_ratio(product.lower(), link.text.lower()) >= 70:
                     if fuzz.partial_ratio(city.lower().rstrip(), link.text.lower()) >= 50:
                         final_links.append(link)
@@ -87,6 +88,9 @@ def scrape_facebook_marketplace(city, product, min_price, max_price, city_code_f
                 link for link in soup.find_all('a')
                 if fuzz.partial_ratio(product.lower(), link.text.lower()) > fuzz_threshold and city.lower() in link.text.lower()
             ]
+
+        # Debug line add karen
+        st.write(f"Final filtered links: {len(final_links)}")
 
         # Extract product data using enhanced logic
         extracted_data = []
