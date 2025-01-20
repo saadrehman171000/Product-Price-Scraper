@@ -14,6 +14,7 @@ import zipfile
 import io
 import os
 import logging
+import random
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,77 +31,60 @@ def scrape_facebook_marketplace_partial(city, product, min_price, max_price, cit
 def scrape_facebook_marketplace(city, product, min_price, max_price, city_code_fb, exact, sleep_time=3):
     try:
         chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-quic")
-        # Add these new options
-        chrome_options.add_argument("--disable-software-rasterizer")
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--start-maximized")
-        chrome_options.add_argument("--remote-debugging-port=9222")
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--window-size=1920,1080')
+        
+        # Add these new options to bypass detection
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        chrome_options.add_argument(f'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{random.randint(90, 120)}.0.0.0 Safari/537.36')
 
-        # Update ChromeDriver initialization
+        st.info("Initializing browser...")
         browser = webdriver.Chrome(options=chrome_options)
-
+        
+        # Mask webdriver
+        browser.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
         # Setup URL
         exact_param = 'true' if exact else 'false'
         url = f"https://www.facebook.com/marketplace/{city_code_fb}/search?query={product}&minPrice={min_price}&maxPrice={max_price}&daysSinceListed=1&exact={exact_param}"
         
-        logger.info(f"Attempting to scrape: {url}")
+        st.info(f"Accessing marketplace...")
         browser.get(url)
         
-        logger.info("Waiting for page load...")
-        time.sleep(4)
-
-        # Close cookies and pop-ups
-        try:
-            close_btn = browser.find_element(By.XPATH, '//div[@aria-label="Decline optional cookies" and @role="button"]')
-            close_btn.click()
-        except:
-            pass
-
-        try:
-            close_btn = browser.find_element(By.XPATH, '//div[@aria-label="Close" and @role="button"]')
-            close_btn.click()
-        except:
-            pass
-
-        # Scroll down to load more items
-        count = 0
-        last_height = browser.execute_script("return document.body.scrollHeight")
-        while True:
+        # Add longer wait time
+        st.info("Waiting for content to load...")
+        time.sleep(10)
+        
+        # Scroll to load more content
+        st.info("Loading more items...")
+        for _ in range(3):
             browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(sleep_time)
-            new_height = browser.execute_script("return document.body.scrollHeight")
-            if (new_height == last_height) or count == 8:
-                break
-            last_height = new_height
-            count = count + 1
-
-        # Retrieve the HTML
+            time.sleep(2)
+        
         html = browser.page_source
-        browser.close()
-
-        # Use BeautifulSoup to parse the HTML
+        st.info(f"Processing {len(html)} characters of content...")
+        
         soup = BeautifulSoup(html, 'html.parser')
-        links = soup.find_all('a')
-
+        
+        # Debug information
+        st.info(f"Found {len(soup.find_all('a'))} total links")
+        
         # Filter links based on search criteria
         if exact:
             final_links = []
-            for link in links:
+            for link in soup.find_all('a'):
                 if fuzz.partial_ratio(product.lower(), link.text.lower()) >= 70:
                     if fuzz.partial_ratio(city.lower().rstrip(), link.text.lower()) >= 50:
                         final_links.append(link)
         else:
             fuzz_threshold = 50
             final_links = [
-                link for link in links
+                link for link in soup.find_all('a')
                 if fuzz.partial_ratio(product.lower(), link.text.lower()) > fuzz_threshold and city.lower() in link.text.lower()
             ]
 
@@ -145,11 +129,16 @@ def scrape_facebook_marketplace(city, product, min_price, max_price, city_code_f
 
         # Create a DataFrame
         items_df = pd.DataFrame(extracted_data)
-        return items_df, len(links)
+        return items_df, len(final_links)
 
     except Exception as e:
-        logger.error(f"Error during scraping: {str(e)}")
+        st.error(f"Error during scraping: {str(e)}")
         return pd.DataFrame(), 0
+    finally:
+        try:
+            browser.quit()
+        except:
+            pass
 
 # Streamlit UI
 st.set_page_config(page_title="Facebook Marketplace Scraper", layout="wide")
